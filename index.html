@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>小杉駅前 バス時計</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<style>
+/* Layout: one screen. Portrait stacks clock over bus board; landscape puts them side by side (bedside / charging stand). */
+:root{
+  --bg:#0c1016;
+  --panel:#151b24;
+  --line:#2a3340;
+  --fg:#f2f5f9;
+  --dim:#8d99a8;
+  --route:#7fb2ff;
+  --soon:#ffab7a;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+  color-scheme:dark;
+}
+html,body{height:100%}
+body{
+  margin:0;background:var(--bg);color:var(--fg);font-family:var(--font);
+  font-variant-numeric:tabular-nums;
+  padding-top:max(12px,env(safe-area-inset-top,0px));padding-bottom:max(12px,env(safe-area-inset-bottom,0px));
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+  box-sizing:border-box;
+}
+.screen{height:100%;display:grid;grid-template-rows:auto 1fr;gap:20px;max-width:900px;margin:0 auto}
+.clock{display:flex;flex-direction:column;gap:6px;padding-top:8px}
+.time{display:flex;align-items:baseline;gap:8px;line-height:1}
+.hm{font-size:clamp(72px,24vw,150px);font-weight:600;letter-spacing:-.02em}
+.ss{font-size:clamp(24px,7vw,44px);color:var(--dim)}
+.meta{display:flex;flex-wrap:wrap;gap:4px 14px;color:var(--dim);font-size:clamp(14px,4vw,20px)}
+.meta b{color:var(--fg);font-weight:500}
+.board{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;display:flex;flex-direction:column;gap:10px;min-height:0;align-content:start}
+.route{display:flex;align-items:center;gap:10px;font-size:clamp(14px,4vw,18px);color:var(--dim)}
+.badge{background:var(--route);color:#08101c;font-weight:700;border-radius:6px;padding:1px 9px}
+.badge.r74{background:#f2c46b}
+.badge.s{font-size:clamp(12px,3.4vw,16px);margin-right:10px;vertical-align:middle}
+.dest{display:flex;align-items:center;gap:10px;font-size:clamp(16px,4.6vw,24px);font-weight:600}
+.lt{display:flex;align-items:center}
+.next{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 16px}
+.next .t{font-size:clamp(56px,18vw,104px);font-weight:600;line-height:1.05}
+.cd{font-size:clamp(16px,4.6vw,24px);color:var(--dim)}
+.cd strong{font-size:clamp(34px,10vw,56px);font-weight:600;color:var(--route)}
+.cd.soon strong{color:var(--soon)}
+ul{list-style:none;margin:0;padding:0}
+li{display:flex;justify-content:space-between;align-items:baseline;border-top:1px solid var(--line);padding:9px 0;font-size:clamp(24px,7vw,38px);font-weight:600}
+li span{font-size:clamp(13px,3.6vw,18px);font-weight:400;color:var(--dim)}
+.msg{color:var(--dim);font-size:18px}
+.foot{color:var(--dim);font-size:12px;line-height:1.5}
+@media (orientation:landscape) and (min-width:620px){
+  .screen{grid-template-rows:1fr;grid-template-columns:1fr 1fr;gap:24px;align-items:center}
+  .hm{font-size:clamp(80px,17vw,160px)}
+  .next .t{font-size:clamp(48px,9vw,84px)}
+  li{font-size:clamp(20px,3.6vw,30px)}
+}
+</style>
+</head>
+<body>
+<div class="screen">
+  <div class="clock">
+    <div class="time"><span class="hm" id="hm">--:--</span><span class="ss" id="ss">--</span></div>
+    <div class="meta"><b id="date"></b><span id="dia"></span></div>
+  </div>
+  <div class="board">
+    <div class="route"><span>小杉駅前 4番のりば　上平間に行くバス（川71 と 川74）</span></div>
+    <div id="board"></div>
+    <div class="foot">令和8年4月1日改正の時刻表の「上」印（川71 上平間行き）と「○」印（川74）だけを表示しています。道路混雑などで遅れることがあります。</div>
+  </div>
+</div>
+<script>
+// 川崎市交通局 市バスナビ 小杉駅前 4番のりば 川71 上平間行き（R8.04.01 改正）
+// 末尾の o は「○印」＝川74（上平間・神明町経由 川崎駅ラゾーナ広場行き）。印のないものは「上印」＝川71 上平間行き。
+const RAW={
+  weekday:"6:37o 7:02o 7:27o 8:01o 8:29 8:38o 9:06 9:18 9:22o 9:55 10:08o 10:29 11:05o 11:10 11:27 11:53 12:12o 12:54 13:15o 13:28 13:40 14:11o 14:16 15:04o 15:17 15:54 16:03o 16:12 16:40 16:45o 17:16o 17:19 17:30 17:50 17:55o 18:03 18:35o 18:47 18:59o 19:05 19:30 19:35o 20:02 20:17o 20:29 20:46 21:06 21:11o 21:55 22:11o",
+  saturday:"6:27o 7:00o 7:38o 8:23 8:29o 8:52 9:18o 9:35 10:02o 10:06 11:05o 11:35 11:53o 12:00 12:30 12:46o 13:04 13:26 13:51o 14:12 14:31 14:52 14:58o 15:10 15:27 15:40o 15:48 16:37o 16:53 17:40 17:45o 18:12 18:17o 18:55o 19:24 19:55o 20:15 20:30 20:49o 20:58 21:40o 22:03 22:15 22:42 22:54 22:59",
+  holiday:"6:25o 7:01o 7:38o 8:15o 8:50 9:03o 9:05 9:30 10:00o 10:07 10:59o 11:17 11:44 11:58o 12:18 12:30 12:44o 13:15 13:51o 14:32 14:49o 15:02 15:21 15:43o 16:46o 16:57 17:11 17:44o 17:56 18:16o 18:27 18:58o 19:30 19:47 19:55o 20:14 20:47o 21:40o 22:05 22:13 22:42 22:54 22:59"
+};
+const HOLIDAYS=new Set(["2026-11-03","2026-11-23","2027-01-01","2027-01-11","2027-02-11","2027-02-23","2027-03-21","2027-03-22","2027-04-29","2027-05-03","2027-05-04","2027-05-05","2027-07-19","2027-08-11","2027-09-20","2027-09-23","2027-10-11","2027-11-03","2027-11-23"]);
+const LABEL={weekday:"平日ダイヤ",saturday:"土曜ダイヤ",holiday:"休日ダイヤ"};
+const WD=["日","月","火","水","木","金","土"];
+const p2=n=>String(n).padStart(2,"0");
+const ymd=d=>d.getFullYear()+"-"+p2(d.getMonth()+1)+"-"+p2(d.getDate());
+const kind=d=>(HOLIDAYS.has(ymd(d))||d.getDay()===0)?"holiday":d.getDay()===6?"saturday":"weekday";
+const mins=s=>s.split(" ").map(x=>{const[a,b]=x.replace("o","").split(":");return {m:+a*60+ +b,r:x.endsWith("o")?"74":"71"};}).sort((a,b)=>a.m-b.m);
+const DEST={"71":"上平間行き","74":"川崎駅行き（上平間経由）"};
+const fmt=m=>p2(Math.floor(m/60))+":"+p2(m%60);
+const rel=m=>m>=60?Math.floor(m/60)+"時間"+(m%60)+"分":m+"分";
+const $=id=>document.getElementById(id);
+function render(){
+  const now=new Date(),k=kind(now);
+  $("hm").textContent=p2(now.getHours())+":"+p2(now.getMinutes());
+  $("ss").textContent=p2(now.getSeconds());
+  $("date").textContent=(now.getMonth()+1)+"月"+now.getDate()+"日（"+WD[now.getDay()]+"）";
+  $("dia").textContent=LABEL[k];
+  const nowS=now.getHours()*3600+now.getMinutes()*60+now.getSeconds();
+  let up=mins(RAW[k]).filter(x=>x.m*60>nowS).map(x=>({m:x.m,r:x.r,day:0}));
+  if(up.length<4){const t=new Date(now);t.setDate(t.getDate()+1);up=up.concat(mins(RAW[kind(t)]).map(x=>({m:x.m,r:x.r,day:1})));}
+  up=up.slice(0,4);
+  const n=up[0],dm=Math.floor((n.m*60+n.day*86400-nowS)/60);
+  let h='<div class="next"><span class="t">'+fmt(n.m)+'</span><span class="cd'+(!n.day&&dm<5?' soon':'')+'">'+
+    (n.day?'明日の始発':'あと<strong>'+(dm>=60?rel(dm):dm)+'</strong>'+(dm>=60?'':'分'))+'</span></div>'+
+    '<div class="dest"><span class="badge r'+n.r+'">川'+n.r+'</span>'+DEST[n.r]+'</div><ul>';
+  up.slice(1).forEach(b=>{const d=Math.floor((b.m*60+b.day*86400-nowS)/60);h+='<li><span class="lt"><span class="badge s r'+b.r+'">川'+b.r+'</span>'+fmt(b.m)+'</span><span>'+(b.day?'明日':rel(d)+'後')+'</span></li>';});
+  $("board").innerHTML=h+'</ul>';
+}
+render();setInterval(render,1000);
+// 画面を点けたままにする（対応していない場合は何もしない）
+let lock=null;
+async function keepAwake(){try{if(navigator.wakeLock&&document.visibilityState==="visible")lock=await navigator.wakeLock.request("screen");}catch(e){}}
+keepAwake();document.addEventListener("visibilitychange",keepAwake);
+document.addEventListener("click",keepAwake);
+</script>
+</body>
+</html>
